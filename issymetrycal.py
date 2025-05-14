@@ -37,20 +37,26 @@ class Solution(object):
             return tree
 
 class Solution2(object):
+    
+    def treeflip(self, tree):
+        if tree is None:
+            return
+        else:
+            self.treeflip(tree.left)
+            self.treeflip(tree.right)
+            tree.left, tree.right = tree.right, tree.left
+            return tree
+    
     def isSymmetric(self, root):
         """
         :type root: Optional[TreeNode]
         :rtype: bool
         """
-        
-        def is_mirror(left, right):
-            if not left and not right:
-                return True
-            if not left or not right:
-                return False
-            return left.val == right.val and is_mirror(left.left, right.right) and is_mirror(left.right, right.left)
-        
-        return is_mirror(root.left, root.right)
+        print(self.treeflip(root.left))
+        print(root.right)
+
+        return root.right == self.treeflip(root.left)
+    
 
 
 root = TreeNode(1, TreeNode(2, TreeNode(3, None, None), TreeNode(4, None, None)), TreeNode(2, TreeNode(4, None, None), TreeNode(3, None, None)))
@@ -58,4 +64,4 @@ root = TreeNode(1, TreeNode(2, TreeNode(3, None, None), TreeNode(4, None, None))
 
 s2 = Solution2()
 s = Solution()
-print(s.isSymmetric(root)) # Don't use another data structure to work with one you already have...
+print(s2.isSymmetric(root)) # Don't use another data structure to work with one you already have...
