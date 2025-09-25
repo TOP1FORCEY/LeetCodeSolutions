@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fullscreen Tenor GIF Background</title>
+  <style>
+    :root{
+      --bubble-bg: rgba(255,255,255,.08);
+      --bubble-border: rgba(255,255,255,.18);
+      --bubble-text: rgba(255,255,255,.96);
+    }
+    html, body { height: 100%; margin: 0; }
+    body { background: #000; overflow: hidden; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif; }
+
+    #stage { position: fixed; inset: 0; background:#000; }
+    #gif   { width:100vw; height:100vh; object-fit:cover; display:block; user-select:none; -webkit-user-drag:none; image-rendering:-webkit-optimize-contrast; filter:saturate(1.05) contrast(1.05); opacity:0; transition:opacity .35s ease; }
+
+    .center { position: fixed; inset: 0; display: grid; place-items: center; pointer-events:none; }
+    .bubble {
+      pointer-events:auto;
+      backdrop-filter: blur(14px) saturate(1.1);
+      -webkit-backdrop-filter: blur(14px) saturate(1.1);
+      background: var(--bubble-bg);
+      border:1px solid var(--bubble-border);
+      border-radius: 9999px;
+      box-shadow: 0 8px 40px rgba(0,0,0,.35), inset 0 0 1px rgba(255,255,255,.2);
+      display:inline-flex; align-items:center; gap:10px;
+      padding:10px 14px;
+      min-height: 48px;
+      max-width: min(92vw, 900px);
+      transition: width .12s ease, height .12s ease, padding .12s ease;
+      will-change: width;
+    }
+    .bubble.collapsed { width: 56px; height: 56px; padding: 0; justify-content:center; }
+
+    .bubble input {
+      width: 1px;
+      border:none; outline:none; background: transparent; color: var(--bubble-text);
+      font-size: 17px; line-height: 1.2; caret-color: white;
+      transition: width .12s ease, opacity .12s ease;
+    }
+    .bubble.collapsed input { width: 0 !important; opacity: 0; }
+
+    .close { display:none; border:none; background:transparent; color: var(--bubble-text); font-size:18px; opacity:.9; cursor:pointer; padding:0 8px; }
+    .bubble:not(.collapsed) .close { display:inline; }
+
+    #measure { position: absolute; visibility: hidden; white-space: pre; font: 17px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif; }
+
+    .hint { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,.7); font-size: 12px; letter-spacing:.2px; }
+  </style>
+</head>
+<body>
+  <div id="stage"><img id="gif" alt="gif background" referrerpolicy="no-referrer" /></div>
+
+  <div class="center">
+    <div class="bubble collapsed" id="bubble" role="search">
+      <input id="query" type="text" aria-label="Search Tenor" autocomplete="off" spellcheck="false" />
+      <button class="close" id="collapseBtn" aria-label="Collapse">✕</button>
+    </div>
+  </div>
+  <div id="measure"></div>
+  <div class="hint">Click the bubble or press any key to expand · <kbd>Enter</kbd> to search</div>
+
+  <script>
+    const TENOR_KEY = "AIzaSyBiS9nv51FNPMZ4ghYRzp4RRzmzTqTSi8Q";
+    const DEFAULT_MS = 6000;
+    const LIMIT = 50;
+    const RANDOM_SHORT = ["cat","kitten","paws","loaf","mlem","blep","purr","zoomies","boop","nap"];
+
+    const el = document.getElementById('gif');
+    let PLAYLIST = []; let cycle = []; let idx = 0; let timer = null;
+
+    function shuffle(arr){ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]];} return arr; }
+    function resetCycle(){ cycle = shuffle([...PLAYLIST]); idx = 0; }
+    function nextItem(){ if(idx >= cycle.length){ resetCycle(); } return cycle[idx++]; }
+
+    function swapTo(item){
+      if(!item){ return; }
+      const onLoadOnce = ()=>{ el.style.opacity='1'; el.removeEventListener('load', onLoadOnce); };
+      el.addEventListener('load', onLoadOnce);
+      el.style.opacity='0';
+      setTimeout(()=>{ el.src = item.url; }, 120);
+
+      clearTimeout(timer);
+      const dwell = Number(item.ms)>0 ? Number(item.ms) : DEFAULT_MS;
+      timer = setTimeout(()=> swapTo(nextItem()), dwell);
+    }
+
+    async function fetchTenor(topic){
+      const q = encodeURIComponent(topic);
+      const url = `https://tenor.googleapis.com/v2/search?q=${q}&key=${TENOR_KEY}&limit=${LIMIT}&media_filter=gif,tinygif`;
+      const resp = await fetch(url);
+      if(!resp.ok){ console.warn('Tenor error', resp.status); return []; }
+      const data = await resp.json();
+      const seen = new Set();
+      const items = [];
+      for(const r of (data.results||[])){
+        const mf = r.media_formats || {};
+        const gif = (mf.gif && mf.gif.url) || (mf.tinygif && mf.tinygif.url);
+        if(!gif || seen.has(gif)) continue;
+        seen.add(gif);
+        items.push({ url: gif, ms: DEFAULT_MS });
+      }
+      return items;
+    }
+
+    async function searchAndPlay(topic){
+      try{
+        const items = await fetchTenor(topic);
+        if(items.length){ PLAYLIST = items; resetCycle(); swapTo(nextItem()); }
+      }catch(e){ console.error(e); }
+    }
+
+    const bubble = document.getElementById('bubble');
+    const input  = document.getElementById('query');
+    const meas   = document.getElementById('measure');
+    const collapseBtn = document.getElementById('collapseBtn');
+
+    function isCollapsed(){ return bubble.classList.contains('collapsed'); }
+
+    function resizeBubble(){
+      if(isCollapsed()) return;
+      meas.style.font = getComputedStyle(input).font;
+      const text = input.value || '';
+      meas.textContent = text + ' ';
+      const textW = Math.ceil(meas.getBoundingClientRect().width);
+      const style = getComputedStyle(bubble);
+      const padX = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+      const gap  = 10;
+      const btnW = collapseBtn.offsetWidth || 28;
+      const minExpanded = 96;
+      const maxW = Math.min(window.innerWidth*0.92, 900);
+      const bubbleW = Math.max(minExpanded, Math.min(maxW, textW + padX + gap + btnW));
+      const inputW  = Math.max(1, bubbleW - (padX + gap + btnW));
+      bubble.style.width = bubbleW + 'px';
+      input.style.width  = inputW  + 'px';
+    }
+
+    function expandBubble(){
+      if(!isCollapsed()) return;
+      bubble.classList.remove('collapsed');
+      resizeBubble();
+      setTimeout(()=>{ input.focus(); }, 10);
+    }
+
+    function collapseBubble(){
+      bubble.classList.add('collapsed');
+      bubble.style.width = '';
+      input.style.width = '';
+      input.blur();
+    }
+
+    bubble.addEventListener('click', ()=>{ if(isCollapsed()) expandBubble(); });
+    collapseBtn.addEventListener('click', (e)=>{ e.stopPropagation(); collapseBubble(); });
+
+    input.addEventListener('input', resizeBubble);
+    window.addEventListener('resize', resizeBubble);
+
+    // Keyboard UX: any key expands; Enter searches; Esc collapses
+    window.addEventListener('keydown', (e)=>{
+      if(isCollapsed()){
+        expandBubble();
+        input.value = '';
+      }
+      if(e.key === 'Escape'){ collapseBubble(); }
+      if(e.key === 'Enter' && document.activeElement === input){
+        const topic = input.value.trim();
+        if(topic){ searchAndPlay(topic); }
+      }
+    });
+
+    let typingTimer; const TYPING_DELAY=250;
+    input.addEventListener('input', ()=>{
+      resizeBubble();
+      clearTimeout(typingTimer);
+      typingTimer = setTimeout(()=>{ const t=input.value.trim(); if(t) searchAndPlay(t); }, TYPING_DELAY);
+    });
+
+    const startWord = RANDOM_SHORT[Math.floor(Math.random()*RANDOM_SHORT.length)];
+    input.value = startWord;
+    searchAndPlay(startWord);
+
+    window.addEventListener('gesturestart', e => e.preventDefault());
+    window.addEventListener('wheel', e => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+  </script>
+</body>
+</html>
